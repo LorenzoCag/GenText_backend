@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file, render_template
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
 import uuid
@@ -22,7 +22,7 @@ jobs = {}
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return jsonify({"status": "ok", "message": "Video Generator API is running"})
 
 @app.route('/generate', methods=['POST'])
 def generate():
