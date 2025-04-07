@@ -35,12 +35,17 @@ def generate_video(prompt, style, n_messages, job_id=None):
 
     voice_audio_paths = generate_voice_clips(convo, user_voice="nova", other_voice="fable")
     text_audio_path = os.path.join(base_dir, "text_audio.mp4")
-    if not os.path.exists(text_audio_path):
-        raise FileNotFoundError("Missing text_audio.mp4")
+    text_sound_clip = None
+    text_sound_duration = 0.5  # Default duration for text sound effect
+
+    if os.path.exists(text_audio_path):
+        text_sound_clip = AudioFileClip(text_audio_path)
+        text_sound_duration = text_sound_clip.duration
 
     audio_paths = []
     for voice in voice_audio_paths:
-        audio_paths.append(text_audio_path)
+        if text_sound_clip is not None:
+            audio_paths.append(text_audio_path)
         audio_paths.append(voice)
 
     final_frames = []
@@ -50,9 +55,6 @@ def generate_video(prompt, style, n_messages, job_id=None):
     frame_index = 0
     current_frame = transition_frames[0]
 
-    for i, audio_path in enumerate(audio_paths):
-        is_voice_clip = (i % 2 == 1)
-        audio_clip = AudioFileClip(audio_path)
     # Create video clips with synchronized audio
     video_clips = []
     fps = 30  # Frames per second for smooth reveal
@@ -114,7 +116,7 @@ def generate_video(prompt, style, n_messages, job_id=None):
             # If no final frame, just use the reveal clip
             msg_clip = reveal_clip
 
-        # Add the text sound effect at the beginning of each message
+        # Add the text sound effect at the beginning of each message if available
         if text_sound_clip is not None:
             # Create a composite audio with both the message audio and text sound
             text_sound = text_sound_clip.set_start(0).set_duration(min(text_sound_duration, duration)).volumex(0.5)
@@ -188,12 +190,17 @@ def generate_video_from_json(data, job_id=None):
     # Generate voice and timing
     voice_audio_paths = generate_voice_clips(convo, user_voice=user_voice, other_voice=other_voice)
     text_audio_path = os.path.join(base_dir, "text_audio.mp4")
-    if not os.path.exists(text_audio_path):
-        raise FileNotFoundError("Missing text_audio.mp4")
+    text_sound_clip = None
+    text_sound_duration = 0.5  # Default duration for text sound effect
+
+    if os.path.exists(text_audio_path):
+        text_sound_clip = AudioFileClip(text_audio_path)
+        text_sound_duration = text_sound_clip.duration
 
     audio_paths = []
     for voice in voice_audio_paths:
-        audio_paths.append(text_audio_path)
+        if text_sound_clip is not None:
+            audio_paths.append(text_audio_path)
         audio_paths.append(voice)
 
     final_frames = []
