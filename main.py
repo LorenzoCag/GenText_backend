@@ -37,105 +37,52 @@ def generate_video(prompt, style, n_messages, job_id=None):
     text_audio_path = os.path.join(base_dir, "text_audio.mp4")
     text_sound_clip = None
     text_sound_duration = 0.5  # Default duration for text sound effect
+    pause_duration = 0.5  # Add pause between messages
 
     if os.path.exists(text_audio_path):
         text_sound_clip = AudioFileClip(text_audio_path)
         text_sound_duration = text_sound_clip.duration
 
-    audio_paths = []
-    for voice in voice_audio_paths:
-        if text_sound_clip is not None:
-            audio_paths.append(text_audio_path)
-        audio_paths.append(voice)
-
     final_frames = []
     frame_durations = []
     audio_clips = []
+    current_time = 0
 
-    frame_index = 0
-    current_frame = transition_frames[0]
+    # Calculate total frames needed for each message
+    frames_per_message = len(transition_frames) // len(convo)
+    
+    for i, (voice_path, msg) in enumerate(zip(voice_audio_paths, convo)):
+        # Add voice clip
+        voice_clip = AudioFileClip(voice_path)
+        voice_duration = voice_clip.duration
+        voice_clip = voice_clip.set_start(current_time)
+        audio_clips.append(voice_clip)
 
-    # Create video clips with synchronized audio
-    video_clips = []
-    fps = 30  # Frames per second for smooth reveal
-    reveal_duration = 1.0  # Duration of reveal in seconds
-    frames_per_reveal = int(fps * reveal_duration)
-
-    # Group frames by message
-    message_frames = {}
-    for frame_path in base_frames:
-        # Extract message index from filename (frameX_msgY_ZZZ.png or frameX_msgY_final.png)
-        parts = os.path.basename(frame_path).split('_')
-        if len(parts) >= 2 and parts[1].startswith('msg'):
-            msg_idx = int(parts[1][3:])
-            if msg_idx not in message_frames:
-                message_frames[msg_idx] = []
-            message_frames[msg_idx].append(frame_path)
-
-    # Sort message indices
-    msg_indices = sorted(message_frames.keys())
-
-    # Create video clips for each message with its audio
-    for i, msg_idx in enumerate(msg_indices):
-        # Get frames for this message
-        msg_frames = message_frames[msg_idx]
-
-        # Create audio clip and get its duration
-        audio_clip = AudioFileClip(audio_paths[msg_idx])
-        duration = audio_clip.duration
-        start_time = sum(frame_durations)
-
-        audio_clips.append(audio_clip.set_start(start_time))
-
-        hold_frames = int(duration * 24)
-        for _ in range(hold_frames):
-            safe_index = min(frame_index, len(transition_frames) - 1)
-            final_frames.append(transition_frames[safe_index])
-            frame_durations.append(1 / 24)
-
-        if is_voice_clip and frame_index + 5 <= len(transition_frames) - 1:
-            for _ in range(5):
-                frame_index += 1
-                safe_index = min(frame_index, len(transition_frames) - 1)
-                final_frames.append(transition_frames[safe_index])
-                frame_durations.append(1 / 24)
-
-        # Create video clip for the reveal animation
-        reveal_frames = [f for f in msg_frames if not f.endswith('_final.png')]
-        reveal_clip = ImageSequenceClip(reveal_frames, fps=fps).set_duration(reveal_duration)
-
-        # Create a clip that holds the final frame for the remaining duration
-        final_frames = [f for f in msg_frames if f.endswith('_final.png')]
-        if final_frames:
-            final_frame = final_frames[0]
-            hold_clip = ImageSequenceClip([final_frame], fps=1).set_duration(duration - reveal_duration)
-
-            # Combine reveal and hold clips
-            msg_clip = concatenate_videoclips([reveal_clip, hold_clip])
-        else:
-            # If no final frame, just use the reveal clip
-            msg_clip = reveal_clip
-
-        # Add the text sound effect at the beginning of each message if available
+        # Add text sound if available
         if text_sound_clip is not None:
-            # Create a composite audio with both the message audio and text sound
-            text_sound = text_sound_clip.set_start(0).set_duration(min(text_sound_duration, duration)).volumex(0.5)
-            composite_audio = CompositeAudioClip([audio_clip, text_sound])
-            msg_clip = msg_clip.set_audio(composite_audio)
-        else:
-            # If no text sound, just use the message audio
-            msg_clip = msg_clip.set_audio(audio_clip)
+            text_sound = text_sound_clip.set_start(current_time)
+            text_sound = text_sound.set_duration(min(text_sound_duration, voice_duration))
+            text_sound = text_sound.volumex(0.5)
+            audio_clips.append(text_sound)
 
-        video_clips.append(msg_clip)
+        # Calculate frames needed for this message
+        message_frames = int((voice_duration + pause_duration) * 24)  # 24 fps
+        start_frame = i * frames_per_message
+        
+        # Add frames for the message duration
+        for frame in range(message_frames):
+            progress = min(1.0, frame / message_frames)
+            frame_index = start_frame + int(progress * frames_per_message)
+            frame_index = min(frame_index, len(transition_frames) - 1)
+            
+            final_frames.append(transition_frames[frame_index])
+            frame_durations.append(1/24)
+        
+        current_time += voice_duration + pause_duration
 
-    # Concatenate all clips
-    final_clip = concatenate_videoclips(video_clips)
-
-    # Generate output filename
-    if job_id:
-        output_filename = f"chat_video_{job_id}.mp4"
-    else:
-        output_filename = "chat_video_scroll.mp4"
+    # Create the final video clip
+    video_clip = ImageSequenceClip(final_frames, durations=frame_durations)
+    video_clip = video_clip.set_audio(CompositeAudioClip(audio_clips))
 
     output_filename = f"chat_video_{job_id}.mp4" if job_id else "chat_video_scroll.mp4"
     output_path = os.path.join(output_dir, output_filename)
@@ -192,44 +139,50 @@ def generate_video_from_json(data, job_id=None):
     text_audio_path = os.path.join(base_dir, "text_audio.mp4")
     text_sound_clip = None
     text_sound_duration = 0.5  # Default duration for text sound effect
+    pause_duration = 0.5  # Add pause between messages
 
     if os.path.exists(text_audio_path):
         text_sound_clip = AudioFileClip(text_audio_path)
         text_sound_duration = text_sound_clip.duration
 
-    audio_paths = []
-    for voice in voice_audio_paths:
-        if text_sound_clip is not None:
-            audio_paths.append(text_audio_path)
-        audio_paths.append(voice)
-
     final_frames = []
     frame_durations = []
     audio_clips = []
+    current_time = 0
 
-    frame_index = 0
+    # Calculate total frames needed for each message
+    frames_per_message = len(transition_frames) // len(convo)
+    
+    for i, (voice_path, msg) in enumerate(zip(voice_audio_paths, convo)):
+        # Add voice clip
+        voice_clip = AudioFileClip(voice_path)
+        voice_duration = voice_clip.duration
+        voice_clip = voice_clip.set_start(current_time)
+        audio_clips.append(voice_clip)
 
-    for i, audio_path in enumerate(audio_paths):
-        is_voice_clip = (i % 2 == 1)
-        audio_clip = AudioFileClip(audio_path)
-        duration = audio_clip.duration
-        start_time = sum(frame_durations)
+        # Add text sound if available
+        if text_sound_clip is not None:
+            text_sound = text_sound_clip.set_start(current_time)
+            text_sound = text_sound.set_duration(min(text_sound_duration, voice_duration))
+            text_sound = text_sound.volumex(0.5)
+            audio_clips.append(text_sound)
 
-        audio_clips.append(audio_clip.set_start(start_time))
+        # Calculate frames needed for this message
+        message_frames = int((voice_duration + pause_duration) * 24)  # 24 fps
+        start_frame = i * frames_per_message
+        
+        # Add frames for the message duration
+        for frame in range(message_frames):
+            progress = min(1.0, frame / message_frames)
+            frame_index = start_frame + int(progress * frames_per_message)
+            frame_index = min(frame_index, len(transition_frames) - 1)
+            
+            final_frames.append(transition_frames[frame_index])
+            frame_durations.append(1/24)
+        
+        current_time += voice_duration + pause_duration
 
-        hold_frames = int(duration * 24)
-        for _ in range(hold_frames):
-            safe_index = min(frame_index, len(transition_frames) - 1)
-            final_frames.append(transition_frames[safe_index])
-            frame_durations.append(1 / 24)
-
-        if is_voice_clip and frame_index + 5 <= len(transition_frames) - 1:
-            for _ in range(5):
-                frame_index += 1
-                safe_index = min(frame_index, len(transition_frames) - 1)
-                final_frames.append(transition_frames[safe_index])
-                frame_durations.append(1 / 24)
-
+    # Create the final video clip
     video_clip = ImageSequenceClip(final_frames, durations=frame_durations)
     video_clip = video_clip.set_audio(CompositeAudioClip(audio_clips))
 
